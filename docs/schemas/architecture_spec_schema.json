@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ArchitectureSpec",
+  "type": "object",
+  "required": [
+    "system_name",
+    "topology_type",
+    "components",
+    "state_machine",
+    "memory_layer",
+    "tool_contracts",
+    "compute_and_latency_budget",
+    "fallback_and_recovery"
+  ],
+  "properties": {
+    "system_name": { "type": "string" },
+    "topology_type": { "type": "string", "enum": ["Hierarchical", "Sequential", "Choreographed", "Hybrid"] },
+    "components": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "role", "inputs", "outputs"],
+        "properties": {
+          "name": { "type": "string" },
+          "role": { "type": "string" },
+          "inputs": { "type": "array", "items": { "type": "string" } },
+          "outputs": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "state_machine": {
+      "type": "object",
+      "required": ["initial_state", "states", "transitions"],
+      "properties": {
+        "initial_state": { "type": "string" },
+        "states": { "type": "array", "items": { "type": "string" } },
+        "transitions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["from_state", "to_state", "trigger"],
+            "properties": {
+              "from_state": { "type": "string" },
+              "to_state": { "type": "string" },
+              "trigger": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "memory_layer": {
+      "type": "object",
+      "required": ["working_context", "episodic_storage", "semantic_vector_store"],
+      "properties": {
+        "working_context": { "type": "string" },
+        "episodic_storage": { "type": "string" },
+        "semantic_vector_store": { "type": "string" }
+      }
+    },
+    "tool_contracts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["tool_name", "description", "input_schema", "output_schema"],
+        "properties": {
+          "tool_name": { "type": "string" },
+          "description": { "type": "string" },
+          "input_schema": { "type": "object" },
+          "output_schema": { "type": "object" }
+        }
+      }
+    },
+    "compute_and_latency_budget": {
+      "type": "object",
+      "required": ["model_tier", "estimated_latency_ms", "max_tokens_per_call"],
+      "properties": {
+        "model_tier": { "type": "string" },
+        "estimated_latency_ms": { "type": "number" },
+        "max_tokens_per_call": { "type": "integer" }
+      }
+    },
+    "fallback_and_recovery": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

@@ -1,0 +1,1319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deloitte AI Team — 3D Command Headquarters</title>
+  
+  <!-- Tailwind CSS & Font Awesome -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- Three.js, OrbitControls, GSAP -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+    
+    * { box-sizing: border-box; }
+    body { font-family: 'Inter', sans-serif; overflow: hidden; user-select: none; }
+    pre, code, .font-mono { font-family: 'JetBrains Mono', monospace; }
+    
+    /* Exact Dollhouse UI Styling matching screenshot */
+    .hq-glass {
+      background: rgba(18, 26, 43, 0.88);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(71, 85, 105, 0.45);
+    }
+    
+    .hq-glass-pill {
+      background: rgba(22, 33, 54, 0.9);
+      border: 1px solid rgba(71, 85, 105, 0.6);
+      backdrop-filter: blur(12px);
+    }
+
+    .hq-glass-active {
+      background: #2563eb;
+      border: 1px solid #60a5fa;
+      color: #ffffff;
+      box-shadow: 0 0 14px rgba(37, 99, 235, 0.5);
+    }
+
+    .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.5); }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #3b82f6; }
+
+    /* Avatar Floating Context Menu */
+    .avatar-action-menu {
+      position: absolute;
+      background: rgba(15, 23, 42, 0.94);
+      border: 1px solid rgba(71, 85, 105, 0.8);
+      border-radius: 10px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6), 0 0 15px rgba(59, 130, 246, 0.25);
+      padding: 6px;
+      z-index: 40;
+      pointer-events: auto;
+      transform: translate(-50%, -120%);
+      transition: opacity 0.15s ease, transform 0.15s ease;
+    }
+
+    /* Pulse animation for active tree nodes */
+    @keyframes pulse-cyan {
+      0%, 100% { box-shadow: 0 0 6px rgba(56, 189, 248, 0.8); }
+      50% { box-shadow: 0 0 16px rgba(56, 189, 248, 1); }
+    }
+    .node-active-pulse { animation: pulse-cyan 1.8s infinite; }
+  </style>
+</head>
+<body class="bg-[#141a24] text-slate-100 h-screen w-screen relative overflow-hidden">
+
+  <!-- ========================================================================= -->
+  <!-- 3D WEBGL ISOMETRIC DOLLHOUSE CANVAS                                       -->
+  <!-- ========================================================================= -->
+  <div id="canvas3d-container" class="absolute inset-0 z-0 bg-[#161c28]"></div>
+
+  <!-- 3D Projected Avatar Action Context Menus & Tags -->
+  <div id="avatars-overlay-container" class="absolute inset-0 pointer-events-none z-10 overflow-hidden"></div>
+
+  <!-- ========================================================================= -->
+  <!-- TOP NAVIGATION BARS (MATCHING SCREENSHOT LAYOUT)                          -->
+  <!-- ========================================================================= -->
+  
+  <!-- Top Left Menu Hamburger -->
+  <div class="absolute top-4 left-4 z-30 pointer-events-auto">
+    <button onclick="toggleSideMenu()" class="w-10 h-10 rounded-xl hq-glass flex items-center justify-center text-slate-300 hover:text-white hover:border-slate-500 shadow-xl transition">
+      <i class="fa-solid fa-bars text-sm"></i>
+    </button>
+  </div>
+
+  <!-- Top Center Perspective View Mode Switcher -->
+  <div class="absolute top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
+    <div class="flex items-center p-1 rounded-2xl hq-glass-pill shadow-2xl text-xs font-semibold space-x-1">
+      <button id="top-btn-walkthrough" onclick="setCameraMode('walkthrough')" 
+              class="px-4 py-2 rounded-xl text-slate-300 hover:text-white transition flex items-center space-x-2">
+        <i class="fa-solid fa-person-walking"></i>
+        <span>First-Person Walkthrough</span>
+      </button>
+      <button id="top-btn-isometric" onclick="setCameraMode('isometric')" 
+              class="px-4 py-2 rounded-xl hq-glass-active transition flex items-center space-x-2">
+        <i class="fa-solid fa-cube"></i>
+        <span>Isometric Dollhouse View</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Top Right Daylight / Evening Lighting Toggle & API Key -->
+  <div class="absolute top-4 right-4 z-30 pointer-events-auto flex items-center space-x-2">
+    
+    <!-- Daylight / Evening Switcher -->
+    <div class="flex items-center p-1 rounded-2xl hq-glass-pill shadow-2xl text-xs font-semibold space-x-1">
+      <button id="light-btn-day" onclick="setLighting('day')" 
+              class="px-3.5 py-1.5 rounded-xl hq-glass-active transition flex items-center space-x-1.5">
+        <i class="fa-solid fa-sun text-amber-300"></i>
+        <span>Daylight</span>
+      </button>
+      <button id="light-btn-evening" onclick="setLighting('evening')" 
+              class="px-3.5 py-1.5 rounded-xl text-slate-400 hover:text-slate-200 transition flex items-center space-x-1.5">
+        <i class="fa-solid fa-moon text-indigo-400"></i>
+        <span>Evening</span>
+      </button>
+    </div>
+
+    <!-- Live Intercom / Canvas Quick Opener -->
+    <button onclick="toggleCanvasDrawer()" class="h-9 px-3.5 rounded-2xl hq-glass border border-blue-500/40 text-blue-400 hover:bg-blue-600/20 text-xs font-bold flex items-center space-x-1.5 shadow-xl transition">
+      <i class="fa-solid fa-terminal"></i>
+      <span>Task Canvas</span>
+    </button>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- RIGHT SIDEBAR: HIERARCHY DIRECTORY + QUICK ZONES + TOPOLOGY MAP           -->
+  <!-- ========================================================================= -->
+  <aside class="absolute top-16 right-4 w-72 z-20 flex flex-col space-y-3 pointer-events-auto max-h-[calc(100vh-80px)] overflow-y-auto custom-scrollbar">
+    
+    <!-- 1. Hierarchy Directory Card -->
+    <div class="hq-glass rounded-2xl p-3.5 shadow-2xl">
+      <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-700/60">
+        <h3 class="text-xs font-bold text-slate-200 flex items-center space-x-2">
+          <i class="fa-solid fa-address-book text-blue-400"></i>
+          <span>Hierarchy Directory</span>
+        </h3>
+        <button class="text-slate-400 hover:text-white text-xs">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <!-- Agent Avatar List -->
+      <div id="hierarchy-list" class="space-y-1.5 max-h-56 overflow-y-auto pr-1 custom-scrollbar text-xs">
+        <!-- Dynamically rendered via JS -->
+      </div>
+    </div>
+
+    <!-- 2. Zone Buttons -->
+    <div class="hq-glass rounded-2xl p-2.5 shadow-2xl flex flex-col space-y-1.5">
+      <button onclick="focusZone('reception')" id="zone-btn-reception" 
+              class="zone-btn w-full py-2 px-3 rounded-xl bg-slate-900/80 hover:bg-slate-800/90 border border-slate-700/60 text-slate-200 text-xs font-medium flex items-center justify-between transition">
+        <span>Reception</span>
+        <i class="fa-solid fa-building text-slate-400 text-[11px]"></i>
+      </button>
+      <button onclick="focusZone('workstations')" id="zone-btn-workstations" 
+              class="zone-btn w-full py-2 px-3 rounded-xl hq-glass-active text-xs font-semibold flex items-center justify-between transition">
+        <span>Workstations</span>
+        <i class="fa-solid fa-desktop text-blue-200 text-[11px]"></i>
+      </button>
+      <button onclick="focusZone('meeting')" id="zone-btn-meeting" 
+              class="zone-btn w-full py-2 px-3 rounded-xl bg-slate-900/80 hover:bg-slate-800/90 border border-slate-700/60 text-slate-200 text-xs font-medium flex items-center justify-between transition">
+        <span>Meeting Rooms</span>
+        <i class="fa-solid fa-chalkboard-user text-slate-400 text-[11px]"></i>
+      </button>
+      <button onclick="focusZone('breakarea')" id="zone-btn-breakarea" 
+              class="zone-btn w-full py-2 px-3 rounded-xl bg-slate-900/80 hover:bg-slate-800/90 border border-slate-700/60 text-slate-200 text-xs font-medium flex items-center justify-between transition">
+        <span>Break Area</span>
+        <i class="fa-solid fa-mug-saucer text-slate-400 text-[11px]"></i>
+      </button>
+      <button onclick="focusZone('serverhub')" id="zone-btn-serverhub" 
+              class="zone-btn w-full py-2 px-3 rounded-xl bg-slate-900/80 hover:bg-slate-800/90 border border-slate-700/60 text-slate-200 text-xs font-medium flex items-center justify-between transition">
+        <span>Task Map (Servers)</span>
+        <i class="fa-solid fa-server text-slate-400 text-[11px]"></i>
+      </button>
+    </div>
+
+    <!-- 3. Corporate Hierarchy Map Widget (Exact Tree Layout from Screenshot) -->
+    <div class="hq-glass rounded-2xl p-3 shadow-2xl">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-[11px] font-bold text-slate-300 uppercase tracking-wider">Corporate Hierarchy Map</span>
+        <span class="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></span>
+      </div>
+
+      <div class="bg-slate-950/70 p-2.5 rounded-xl border border-slate-800/80 overflow-hidden">
+        <svg viewBox="0 0 240 135" class="w-full h-auto">
+          <!-- Tree Branch Connections -->
+          <path d="M 120 18 L 120 40 M 120 40 L 40 40 L 40 55 M 120 40 L 95 40 L 95 55 M 120 40 L 145 40 L 145 55 M 120 40 L 200 40 L 200 55 M 40 75 L 40 90 M 120 75 L 120 90 M 200 75 L 200 90 M 120 108 L 120 120" 
+                stroke="#475569" stroke-width="1.5" fill="none" />
+
+          <!-- Root: Managing Director REC -->
+          <g onclick="focusAgent('orchestrator')" class="cursor-pointer">
+            <rect x="92" y="4" width="56" height="18" rx="4" fill="#2563eb" stroke="#93c5fd" stroke-width="1" />
+            <text x="120" y="16" font-size="8" font-weight="bold" fill="#ffffff" text-anchor="middle">@Orchestrator</text>
+          </g>
+
+          <!-- Row 2: Strategy, Architect, Engineer, Auditor -->
+          <g onclick="focusAgent('consultant')" class="cursor-pointer">
+            <circle cx="40" cy="65" r="10" fill="#1e3a8a" stroke="#60a5fa" stroke-width="1" />
+            <text x="40" y="68" font-size="6" font-weight="bold" fill="#ffffff" text-anchor="middle">PRD</text>
+          </g>
+          <g onclick="focusAgent('architect')" class="cursor-pointer">
+            <circle cx="95" cy="65" r="10" fill="#312e81" stroke="#818cf8" stroke-width="1" />
+            <text x="95" y="68" font-size="6" font-weight="bold" fill="#ffffff" text-anchor="middle">ARCH</text>
+          </g>
+          <g onclick="focusAgent('engineer')" class="cursor-pointer">
+            <circle cx="145" cy="65" r="10" fill="#164e63" stroke="#22d3ee" stroke-width="1" />
+            <text x="145" y="68" font-size="6" font-weight="bold" fill="#ffffff" text-anchor="middle">CODE</text>
+          </g>
+          <g onclick="focusAgent('auditor')" class="cursor-pointer">
+            <circle cx="200" cy="65" r="10" fill="#064e3b" stroke="#34d399" stroke-width="1" />
+            <text x="200" y="68" font-size="6" font-weight="bold" fill="#ffffff" text-anchor="middle">QA</text>
+          </g>
+
+          <!-- Row 3: Middle Managers & Associates -->
+          <g class="cursor-pointer">
+            <rect x="20" y="92" width="40" height="15" rx="3" fill="#1e293b" stroke="#475569" stroke-width="1" />
+            <text x="40" y="103" font-size="6" fill="#94a3b8" text-anchor="middle">Team Lead</text>
+          </g>
+          <g class="cursor-pointer">
+            <rect x="100" y="92" width="40" height="15" rx="3" fill="#1e293b" stroke="#475569" stroke-width="1" />
+            <text x="120" y="103" font-size="6" fill="#94a3b8" text-anchor="middle">Associate</text>
+          </g>
+          <g class="cursor-pointer">
+            <rect x="180" y="92" width="40" height="15" rx="3" fill="#1e293b" stroke="#475569" stroke-width="1" />
+            <text x="200" y="103" font-size="6" fill="#94a3b8" text-anchor="middle">SecOps</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ========================================================================= -->
+  <!-- BOTTOM-LEFT VIRTUAL D-PAD & WASD CONTROLS (EXACT SCREENSHOT STYLE)        -->
+  <!-- ========================================================================= -->
+  <div class="absolute bottom-4 left-4 z-30 flex items-end space-x-3 pointer-events-auto">
+    
+    <!-- Virtual Circular Joystick D-Pad -->
+    <div class="w-28 h-28 rounded-full hq-glass border-2 border-slate-700/80 shadow-2xl flex items-center justify-center relative">
+      <div class="w-12 h-12 rounded-full bg-slate-900 border border-slate-600 shadow-inner flex items-center justify-center text-slate-300">
+        <i class="fa-solid fa-crosshairs text-xs text-blue-400"></i>
+      </div>
+      <!-- D-Pad Directional Triggers -->
+      <button onmousedown="startMovement('forward')" onmouseup="stopMovement()" class="absolute top-1.5 left-1/2 -translate-x-1/2 text-slate-400 hover:text-white text-xs p-1">
+        <i class="fa-solid fa-caret-up text-sm"></i>
+      </button>
+      <button onmousedown="startMovement('backward')" onmouseup="stopMovement()" class="absolute bottom-1.5 left-1/2 -translate-x-1/2 text-slate-400 hover:text-white text-xs p-1">
+        <i class="fa-solid fa-caret-down text-sm"></i>
+      </button>
+      <button onmousedown="startMovement('left')" onmouseup="stopMovement()" class="absolute left-1.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs p-1">
+        <i class="fa-solid fa-caret-left text-sm"></i>
+      </button>
+      <button onmousedown="startMovement('right')" onmouseup="stopMovement()" class="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs p-1">
+        <i class="fa-solid fa-caret-right text-sm"></i>
+      </button>
+    </div>
+
+    <!-- WASD Buttons & Look Person Trigger -->
+    <div class="flex flex-col space-y-2">
+      <!-- WASD Grid -->
+      <div class="grid grid-cols-3 gap-1 w-28">
+        <div></div>
+        <button onmousedown="startMovement('forward')" onmouseup="stopMovement()" class="h-8 rounded-lg hq-glass font-bold text-xs flex items-center justify-center text-slate-200 hover:border-blue-400 active:bg-blue-600 transition">W</button>
+        <div></div>
+        <button onmousedown="startMovement('left')" onmouseup="stopMovement()" class="h-8 rounded-lg hq-glass font-bold text-xs flex items-center justify-center text-slate-200 hover:border-blue-400 active:bg-blue-600 transition">A</button>
+        <button onmousedown="startMovement('backward')" onmouseup="stopMovement()" class="h-8 rounded-lg hq-glass font-bold text-xs flex items-center justify-center text-slate-200 hover:border-blue-400 active:bg-blue-600 transition">S</button>
+        <button onmousedown="startMovement('right')" onmouseup="stopMovement()" class="h-8 rounded-lg hq-glass font-bold text-xs flex items-center justify-center text-slate-200 hover:border-blue-400 active:bg-blue-600 transition">D</button>
+      </div>
+
+      <!-- Look Person Button -->
+      <button id="btn-look-person" onclick="toggleLookPerson()" class="px-3 py-1.5 rounded-xl hq-glass text-slate-300 hover:text-white text-xs font-medium flex items-center justify-center space-x-1.5 transition">
+        <i class="fa-regular fa-eye text-blue-400"></i>
+        <span>Look Person</span>
+      </button>
+    </div>
+
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- BOTTOM CENTER PERSPECTIVE CONTROLS (MIRRORED LIKE SCREENSHOT)             -->
+  <!-- ========================================================================= -->
+  <div class="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 pointer-events-auto hidden md:block">
+    <div class="flex items-center p-1 rounded-2xl hq-glass-pill shadow-2xl text-xs font-semibold space-x-1">
+      <button id="btm-btn-walkthrough" onclick="setCameraMode('walkthrough')" 
+              class="px-4 py-2 rounded-xl text-slate-300 hover:text-white transition flex items-center space-x-2">
+        <i class="fa-solid fa-person-walking"></i>
+        <span>First-Person Walkthrough</span>
+      </button>
+      <button id="btm-btn-isometric" onclick="setCameraMode('isometric')" 
+              class="px-4 py-2 rounded-xl hq-glass-active transition flex items-center space-x-2">
+        <i class="fa-solid fa-cube"></i>
+        <span>Isometric Dollhouse View</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- COLLAPSIBLE TASK ASSIGNMENT & MULTI-AGENT WORK CANVAS DRAWER              -->
+  <!-- ========================================================================= -->
+  <div id="canvas-drawer" class="absolute bottom-4 left-80 right-80 max-w-3xl mx-auto z-40 hq-glass rounded-2xl shadow-2xl border border-slate-700 flex flex-col overflow-hidden pointer-events-auto transition-all max-h-[60vh]">
+    
+    <!-- Drawer Header -->
+    <div class="px-4 py-2.5 bg-slate-950/90 border-b border-slate-800 flex items-center justify-between">
+      <div class="flex items-center space-x-2.5">
+        <div class="w-2.5 h-2.5 rounded-full bg-blue-400 animate-pulse"></div>
+        <span id="canvas-header-title" class="text-xs font-bold text-white uppercase tracking-wider">Autonomous AI Consultancy Work Canvas</span>
+        <span id="canvas-status-pill" class="text-[10px] px-2 py-0.5 rounded-full bg-blue-950 border border-blue-700 text-blue-300 font-mono">READY</span>
+      </div>
+
+      <!-- Canvas Sub-Tabs -->
+      <div class="flex items-center space-x-1 bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs">
+        <button onclick="switchWorkCanvasTab('intercom')" id="wtab-intercom" class="wtab-btn px-2.5 py-1 rounded-lg font-semibold bg-blue-600 text-white transition">Intercom</button>
+        <button onclick="switchWorkCanvasTab('plan')" id="wtab-plan" class="wtab-btn px-2.5 py-1 rounded-lg font-semibold text-slate-400 hover:text-white transition">Plan & ROI</button>
+        <button onclick="switchWorkCanvasTab('blueprint')" id="wtab-blueprint" class="wtab-btn px-2.5 py-1 rounded-lg font-semibold text-slate-400 hover:text-white transition">Blueprint</button>
+        <button onclick="switchWorkCanvasTab('code')" id="wtab-code" class="wtab-btn px-2.5 py-1 rounded-lg font-semibold text-slate-400 hover:text-white transition">Code</button>
+        <button onclick="switchWorkCanvasTab('safety')" id="wtab-safety" class="wtab-btn px-2.5 py-1 rounded-lg font-semibold text-slate-400 hover:text-white transition">Safety</button>
+      </div>
+
+      <!-- Close / Minimize Drawer -->
+      <button onclick="toggleCanvasDrawer()" class="text-slate-400 hover:text-white text-xs px-2 py-1">
+        <i class="fa-solid fa-chevron-down"></i>
+      </button>
+    </div>
+
+    <!-- Drawer Content Body -->
+    <div id="drawer-body-container" class="flex-1 overflow-y-auto p-4 custom-scrollbar max-h-72 text-xs bg-slate-950/50">
+      
+      <!-- TAB 1: Intercom Feed -->
+      <div id="wview-intercom" class="space-y-3">
+        <div id="chat-stream" class="space-y-2.5">
+          <div class="flex items-start space-x-2.5">
+            <div class="w-7 h-7 rounded-lg bg-blue-950 border border-blue-700 text-blue-400 flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">
+              <i class="fa-solid fa-crown"></i>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 p-3 rounded-2xl text-slate-200 shadow flex-1">
+              <div class="font-bold text-blue-400 mb-0.5">Managing Director (@Orchestrator):</div>
+              <p>Welcome to the <strong>Deloitte Autonomous AI Command HQ</strong>. Assign tasks to any avatar in the room or submit an enterprise brief below. Watch as agents walk between rooms, deliberate over blueprints, and deliver verified production code.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 2: Plan & ROI -->
+      <div id="wview-plan" class="hidden space-y-3">
+        <div class="grid grid-cols-3 gap-2.5">
+          <div class="bg-slate-900 border border-slate-800 p-2.5 rounded-xl">
+            <span class="text-slate-400 text-[10px] block">2x2 Matrix</span>
+            <span id="plan-classification" class="font-bold text-emerald-400 text-xs mt-0.5 block">Quick Win (High Value)</span>
+          </div>
+          <div class="bg-slate-900 border border-slate-800 p-2.5 rounded-xl">
+            <span class="text-slate-400 text-[10px] block">Est. Cost to Build (TCO)</span>
+            <span id="plan-tco" class="font-bold text-white text-xs mt-0.5 block">$83,324</span>
+          </div>
+          <div class="bg-slate-900 border border-slate-800 p-2.5 rounded-xl">
+            <span class="text-slate-400 text-[10px] block">Expected Annual ROI</span>
+            <span id="plan-roi" class="font-bold text-purple-400 text-xs mt-0.5 block">11.3x Return</span>
+          </div>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl text-slate-300">
+          <h4 class="font-bold text-white mb-1 uppercase text-[10px]">Strategic Requirements & PRD</h4>
+          <div id="plan-summary" class="leading-relaxed whitespace-pre-wrap">Assign a task to generate an automated PRD, cost model, and ROI calculation.</div>
+        </div>
+      </div>
+
+      <!-- TAB 3: Blueprint -->
+      <div id="wview-blueprint" class="hidden space-y-3">
+        <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl">
+          <h4 class="font-bold text-white mb-1.5 uppercase text-[10px]">Multi-Agent Architecture Blueprint</h4>
+          <div id="blueprint-content" class="font-mono text-[11px] text-indigo-300 bg-slate-950 p-3 rounded-lg border border-slate-800 whitespace-pre-wrap">
+• Architecture: Hierarchical 5-Node Agent Loop
+• Context: 8,192 Token Sliding Context Window with Prompt Caching
+• Storage: Vector RAG Embeddings Index (Cosine Distance)
+• Interface: Strict JSON Schema Type Enforcements</div>
+        </div>
+      </div>
+
+      <!-- TAB 4: Code -->
+      <div id="wview-code" class="hidden space-y-3">
+        <div class="flex items-center justify-between">
+          <span class="text-slate-400 text-xs">Pytest Status: <strong class="text-emerald-400 font-mono">100% PASSED (8/8)</strong></span>
+          <button onclick="copyGeneratedCode()" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px]">
+            <i class="fa-regular fa-copy mr-1"></i>Copy Code
+          </button>
+        </div>
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 font-mono text-xs text-cyan-300 overflow-x-auto">
+          <pre id="code-display">"""
+Autonomous AI Runtime Engine
+"""
+class ProductionAgentEngine:
+    def __init__(self, name: str):
+        self.name = name
+
+    def execute(self, payload: dict) -> dict:
+        return {"status": "SUCCESS", "verified": True}</pre>
+        </div>
+      </div>
+
+      <!-- TAB 5: Safety -->
+      <div id="wview-safety" class="hidden space-y-3">
+        <div class="grid grid-cols-2 gap-2.5">
+          <div class="bg-slate-900 p-2.5 rounded-xl border border-slate-800">
+            <div class="flex justify-between font-semibold mb-1 text-[11px]">
+              <span class="text-slate-300">Prompt Injection Defense</span>
+              <span class="text-emerald-400 font-mono">98%</span>
+            </div>
+            <div class="w-full bg-slate-950 rounded-full h-1.5 overflow-hidden">
+              <div class="bg-emerald-500 h-1.5 rounded-full" style="width: 98%"></div>
+            </div>
+          </div>
+          <div class="bg-slate-900 p-2.5 rounded-xl border border-slate-800">
+            <div class="flex justify-between font-semibold mb-1 text-[11px]">
+              <span class="text-slate-300">Privacy & PII Masking</span>
+              <span class="text-emerald-400 font-mono">100%</span>
+            </div>
+            <div class="w-full bg-slate-950 rounded-full h-1.5 overflow-hidden">
+              <div class="bg-emerald-500 h-1.5 rounded-full" style="width: 100%"></div>
+            </div>
+          </div>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl text-slate-300 text-xs">
+          <h4 class="font-bold text-white mb-1 uppercase text-[10px]">Safety Sign-Off</h4>
+          <p id="safety-summary">System passed zero-trust evaluation across all 7 Trustworthy AI dimensions.</p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Quick Presets & Input Bar -->
+    <div class="p-3 bg-slate-950 border-t border-slate-800 flex flex-col space-y-2">
+      <div class="flex items-center space-x-2 overflow-x-auto custom-scrollbar text-[11px]">
+        <span class="text-slate-500 whitespace-nowrap"><i class="fa-solid fa-wand-magic-sparkles text-amber-400"></i> Presets:</span>
+        <button onclick="setPrompt('Build an automated Healthcare Prior-Authorization & Insurance Claims agent with strict HIPAA compliance.')" 
+                class="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 whitespace-nowrap border border-slate-800 transition">
+          🏥 Healthcare Claims Agent
+        </button>
+        <button onclick="setPrompt('Build an automated Financial Fraud Detection & AML Transaction Graph agent with zero latency.')" 
+                class="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 whitespace-nowrap border border-slate-800 transition">
+          💳 Fraud Detection Agent
+        </button>
+        <button onclick="setPrompt('Build an AI Customer Support Agent that uses company knowledge base and creates tickets.')" 
+                class="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 whitespace-nowrap border border-slate-800 transition">
+          🎧 Customer Support Agent
+        </button>
+      </div>
+
+      <div class="flex items-center space-x-2">
+        <textarea id="chat-input" rows="1" 
+                  placeholder="Assign a task to the agents or enter goal..." 
+                  onkeydown="handleKeyDown(event)"
+                  class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition resize-none"></textarea>
+        <button id="send-btn" onclick="sendMessage()" 
+                class="bg-blue-600 hover:bg-blue-500 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center justify-center space-x-1.5 transition shadow-lg shrink-0">
+          <span>Assign</span>
+          <i class="fa-solid fa-paper-plane"></i>
+        </button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- THREE.JS PHOTOREALISTIC ISOMETRIC DOLLHOUSE ENGINE                        -->
+  <!-- ========================================================================= -->
+  <script>
+    let scene, camera, renderer, controls;
+    let clock = new THREE.Clock();
+    let currentLighting = 'day';
+    let cameraMode = 'isometric';
+    let isLookPerson = false;
+    let isWalkthrough = false;
+    let selectedAvatar = null;
+
+    // Lights
+    let ambientLight, sunLight, fillLight, roomLights = [];
+
+    // Avatar Definitions matching the screenshot
+    const AVATARS = [
+      { id: "orchestrator", name: "Avatar 1 (@Orchestrator)", role: "Managing Director", status: "Walking to Meeting Room", verified: true, pos: { x: -3, y: 0, z: -4 }, targetPos: { x: -14, y: 0, z: -10 }, color: 0x3b82f6, isWalking: true },
+      { id: "consultant", name: "Avatar 2 (@Consultant)", role: "Strategy Consultant", status: "Working on Document", verified: true, pos: { x: -4, y: 0, z: 2 }, deskPos: { x: -4, y: 0, z: 2 }, color: 0x60a5fa, isWalking: false },
+      { id: "architect", name: "Avatar 3 (@Architect)", role: "Systems Architect", status: "Working on Document", verified: true, pos: { x: 4, y: 0, z: 2 }, deskPos: { x: 4, y: 0, z: 2 }, color: 0x818cf8, isWalking: false },
+      { id: "engineer", name: "Avatar 4 (@Engineer)", role: "Lead AI Engineer", status: "Working on Document", verified: false, pos: { x: -4, y: 0, z: 7 }, deskPos: { x: -4, y: 0, z: 7 }, color: 0x22d3ee, isWalking: false },
+      { id: "auditor", name: "Avatar 5 (@Auditor)", role: "SecOps Auditor", status: "Working on Spec", verified: false, pos: { x: 4, y: 0, z: 7 }, deskPos: { x: 4, y: 0, z: 7 }, color: 0x34d399, isWalking: false },
+      { id: "depthead", name: "Department Heads", role: "Multi-department heads", status: "In Meeting Room", verified: false, pos: { x: -14, y: 0, z: -12 }, color: 0xf59e0b, isWalking: false },
+      { id: "manager", name: "Middle Manager", role: "Middle Manager", status: "Reviewing Budgets", verified: false, pos: { x: 12, y: 0, z: -10 }, color: 0xec4899, isWalking: false },
+      { id: "lead", name: "Team Lead", role: "Team Lead", status: "Working on Document", verified: false, pos: { x: 8, y: 0, z: 12 }, color: 0xa855f7, isWalking: false }
+    ];
+
+    // Zone Coordinates for Camera Jumps
+    const ZONES = {
+      workstations: { cam: { x: 26, y: 32, z: 32 }, target: { x: 0, y: 0, z: 3 } },
+      reception: { cam: { x: -12, y: 22, z: 24 }, target: { x: -14, y: 0, z: 12 } },
+      meeting: { cam: { x: -20, y: 18, z: -4 }, target: { x: -14, y: 1, z: -10 } },
+      breakarea: { cam: { x: 24, y: 18, z: -4 }, target: { x: 14, y: 1, z: -10 } },
+      serverhub: { cam: { x: 26, y: 24, z: 18 }, target: { x: 12, y: 1, z: 6 } }
+    };
+
+    let avatarMeshes = {};
+    let avatarMenuElements = {};
+
+    // =========================================================================
+    // INITIALIZATION
+    // =========================================================================
+    function initScene() {
+      const container = document.getElementById('canvas3d-container');
+
+      // 3D Scene
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x18202c);
+
+      // Camera
+      camera = new THREE.PerspectiveCamera(38, window.innerWidth / window.innerHeight, 0.1, 1000);
+      camera.position.set(30, 36, 38);
+
+      // Renderer
+      renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.1;
+      container.appendChild(renderer.domElement);
+
+      // Controls
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.06;
+      controls.maxPolarAngle = Math.PI / 2.1;
+      controls.minDistance = 8;
+      controls.maxDistance = 100;
+      controls.target.set(0, 0, 0);
+
+      // Build Dollhouse Environment
+      setupDollhouseLighting();
+      buildDollhouseFloorAndWalls();
+      buildDollhouseFurniture();
+      buildDollhouseAvatars();
+      renderHierarchyDirectory();
+
+      // Window Resize Listener
+      window.addEventListener('resize', onWindowResize);
+
+      // Animation Loop
+      animate();
+    }
+
+    // =========================================================================
+    // LIGHTING: DAYLIGHT & EVENING
+    // =========================================================================
+    function setupDollhouseLighting() {
+      // Ambient Light
+      ambientLight = new THREE.AmbientLight(0xdbeafe, 1.4);
+      scene.add(ambientLight);
+
+      // Main Sun / Ceiling Key Light
+      sunLight = new THREE.DirectionalLight(0xfffbeb, 1.8);
+      sunLight.position.set(25, 45, 25);
+      sunLight.castShadow = true;
+      sunLight.shadow.mapSize.width = 2048;
+      sunLight.shadow.mapSize.height = 2048;
+      sunLight.shadow.camera.near = 1;
+      sunLight.shadow.camera.far = 120;
+      sunLight.shadow.camera.left = -35;
+      sunLight.shadow.camera.right = 35;
+      sunLight.shadow.camera.top = 35;
+      sunLight.shadow.camera.bottom = -35;
+      scene.add(sunLight);
+
+      // Soft Fill Light
+      fillLight = new THREE.DirectionalLight(0x93c5fd, 0.8);
+      fillLight.position.set(-25, 20, -25);
+      scene.add(fillLight);
+
+      // Warm Room Overhead Spotlights
+      const warmLight1 = new THREE.PointLight(0xfef08a, 1.5, 25);
+      warmLight1.position.set(-14, 6, -10); // Meeting room
+      scene.add(warmLight1);
+      roomLights.push(warmLight1);
+
+      const warmLight2 = new THREE.PointLight(0xfef08a, 1.5, 25);
+      warmLight2.position.set(14, 6, -10); // Break lounge
+      scene.add(warmLight2);
+      roomLights.push(warmLight2);
+
+      const warmLight3 = new THREE.PointLight(0xbfdbfe, 1.8, 30);
+      warmLight3.position.set(0, 7, 5); // Central Workspace
+      scene.add(warmLight3);
+      roomLights.push(warmLight3);
+    }
+
+    function setLighting(mode) {
+      currentLighting = mode;
+      const btnDay = document.getElementById('light-btn-day');
+      const btnEve = document.getElementById('light-btn-evening');
+
+      if (mode === 'day') {
+        btnDay.className = "px-3.5 py-1.5 rounded-xl hq-glass-active transition flex items-center space-x-1.5";
+        btnEve.className = "px-3.5 py-1.5 rounded-xl text-slate-400 hover:text-slate-200 transition flex items-center space-x-1.5";
+        
+        gsap.to(scene.background, { r: 0.09, g: 0.12, b: 0.17, duration: 1 });
+        gsap.to(ambientLight, { intensity: 1.4, duration: 1 });
+        gsap.to(sunLight, { intensity: 1.8, duration: 1 });
+        renderer.toneMappingExposure = 1.1;
+      } else {
+        btnDay.className = "px-3.5 py-1.5 rounded-xl text-slate-400 hover:text-slate-200 transition flex items-center space-x-1.5";
+        btnEve.className = "px-3.5 py-1.5 rounded-xl hq-glass-active transition flex items-center space-x-1.5";
+        
+        gsap.to(scene.background, { r: 0.04, g: 0.06, b: 0.1, duration: 1 });
+        gsap.to(ambientLight, { intensity: 0.6, duration: 1 });
+        gsap.to(sunLight, { intensity: 0.8, duration: 1 });
+        renderer.toneMappingExposure = 0.9;
+      }
+    }
+
+    // =========================================================================
+    // DOLLHOUSE 3D ARCHITECTURE: FLOORS, WOOD ACCENTS, GLASS WALLS
+    // =========================================================================
+    function buildDollhouseFloorAndWalls() {
+      // Concrete Polished Floor
+      const floorGeo = new THREE.PlaneGeometry(64, 52);
+      const floorMat = new THREE.MeshStandardMaterial({
+        color: 0xd6d3d1, // Warm polished light grey concrete
+        roughness: 0.35,
+        metalness: 0.1
+      });
+      const floor = new THREE.Mesh(floorGeo, floorMat);
+      floor.rotation.x = -Math.PI / 2;
+      floor.receiveShadow = true;
+      scene.add(floor);
+
+      // Floor Section Carpets
+      createCarpet(-14, -10, 16, 14, 0xe2e8f0); // Meeting room
+      createCarpet(14, -10, 16, 14, 0xf1f5f9);  // Breakout lounge
+      createCarpet(-14, 12, 16, 12, 0xe2e8f0);  // Reception lounge
+
+      // Outer Solid Walls (Black framed modern architecture)
+      const wallMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.8 });
+      const innerWallMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.9 });
+      const woodPanelMat = new THREE.MeshStandardMaterial({ color: 0x9a3412, roughness: 0.4 }); // Warm vertical slats
+
+      // Back Wall
+      createSolidWall(0, 3, -26, 64, 6, 0.8, wallMat);
+      // Left Wall
+      createSolidWall(-32, 3, 0, 0.8, 6, 52, wallMat);
+      // Right Wall
+      createSolidWall(32, 3, 0, 0.8, 6, 52, wallMat);
+
+      // Reception Wood Slatted Accent Backdrop (Left Front)
+      createSolidWall(-18, 3, 19.5, 10, 5.8, 0.4, woodPanelMat);
+
+      // Glass Partition Walls with Black Frames
+      const glassMat = new THREE.MeshPhysicalMaterial({
+        color: 0xe2e8f0,
+        transparent: true,
+        opacity: 0.22,
+        roughness: 0.05,
+        transmission: 0.95,
+        thickness: 0.4
+      });
+
+      // Meeting Room Glass Walls (Back Left)
+      createGlassWall(-6, 2.5, -10, 0.2, 5, 14, glassMat);
+      createGlassWall(-14, 2.5, -3, 16, 5, 0.2, glassMat);
+
+      // Break Area Glass Walls (Back Right)
+      createGlassWall(6, 2.5, -10, 0.2, 5, 14, glassMat);
+      createGlassWall(14, 2.5, -3, 16, 5, 0.2, glassMat);
+    }
+
+    function createCarpet(x, z, w, d, color) {
+      const geo = new THREE.PlaneGeometry(w, d);
+      const mat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.9 });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set(x, 0.01, z);
+      mesh.receiveShadow = true;
+      scene.add(mesh);
+    }
+
+    function createSolidWall(x, y, z, w, h, d, mat) {
+      const geo = new THREE.BoxGeometry(w, h, d);
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(x, y, z);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      scene.add(mesh);
+    }
+
+    function createGlassWall(x, y, z, w, h, d, glassMat) {
+      const group = new THREE.Group();
+      
+      // Glass Pane
+      const glass = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), glassMat);
+      group.add(glass);
+
+      // Black Frame Top & Bottom
+      const frameMat = new THREE.MeshStandardMaterial({ color: 0x0f172a });
+      const topFrame = new THREE.Mesh(new THREE.BoxGeometry(w > d ? w : 0.3, 0.15, d > w ? d : 0.3), frameMat);
+      topFrame.position.y = h / 2;
+      const btmFrame = new THREE.Mesh(new THREE.BoxGeometry(w > d ? w : 0.3, 0.15, d > w ? d : 0.3), frameMat);
+      btmFrame.position.y = -h / 2;
+      group.add(topFrame, btmFrame);
+
+      group.position.set(x, y, z);
+      scene.add(group);
+    }
+
+    // =========================================================================
+    // FURNITURE: DESKS, DUAL MONITORS, MEETING ROOM, COFFEE BAR, COUCHES
+    // =========================================================================
+    function buildDollhouseFurniture() {
+      // 1. Central Workstations Rows (Modern White Desks with Acoustic Dividers)
+      createWorkstationCluster(0, 4);
+
+      // 2. Executive Meeting Room (Large Board Table + Presentation Screen)
+      createBoardroom(-14, -10);
+
+      // 3. Break Area / Coffee Kitchenette + Lounge
+      createBreakLounge(14, -10);
+
+      // 4. Reception Front Desk + Waiting Lounge
+      createReceptionLounge(-14, 12);
+    }
+
+    function createWorkstationCluster(cx, cz) {
+      const deskPositions = [
+        { x: -5, z: cz - 2 }, { x: 0, z: cz - 2 }, { x: 5, z: cz - 2 },
+        { x: -5, z: cz + 3 }, { x: 0, z: cz + 3 }, { x: 5, z: cz + 3 },
+        { x: -5, z: cz + 8 }, { x: 0, z: cz + 8 }, { x: 5, z: cz + 8 }
+      ];
+
+      deskPositions.forEach(pos => {
+        const deskGroup = new THREE.Group();
+
+        // White Desk Top
+        const top = new THREE.Mesh(
+          new THREE.BoxGeometry(3.6, 0.08, 1.8),
+          new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2 })
+        );
+        top.position.y = 0.74;
+        top.castShadow = true;
+        deskGroup.add(top);
+
+        // Acoustic Grey Desk Divider
+        const divider = new THREE.Mesh(
+          new THREE.BoxGeometry(3.4, 0.6, 0.08),
+          new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.9 })
+        );
+        divider.position.set(0, 1.05, -0.85);
+        deskGroup.add(divider);
+
+        // Dual Widescreen Monitors
+        const screenMat = new THREE.MeshBasicMaterial({ color: 0x1e293b });
+        const mon1 = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.7, 0.05), screenMat);
+        mon1.position.set(-0.6, 1.3, -0.5);
+        const mon2 = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.7, 0.05), screenMat);
+        mon2.position.set(0.6, 1.3, -0.5);
+        mon2.rotation.y = -0.2;
+        deskGroup.add(mon1, mon2);
+
+        // Office Chair
+        const chair = new THREE.Mesh(
+          new THREE.BoxGeometry(0.8, 0.8, 0.8),
+          new THREE.MeshStandardMaterial({ color: 0x334155 })
+        );
+        chair.position.set(0, 0.6, 0.7);
+        deskGroup.add(chair);
+
+        deskGroup.position.set(pos.x, 0, pos.z);
+        scene.add(deskGroup);
+      });
+    }
+
+    function createBoardroom(x, z) {
+      const group = new THREE.Group();
+
+      // Long Conference Table
+      const table = new THREE.Mesh(
+        new THREE.BoxGeometry(9, 0.1, 3.2),
+        new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.3 }) // Warm oak table
+      );
+      table.position.y = 0.75;
+      table.castShadow = true;
+      group.add(table);
+
+      // Conference Chairs
+      for (let i = -3.5; i <= 3.5; i += 1.75) {
+        const chair1 = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.7, 0.6), new THREE.MeshStandardMaterial({ color: 0x1e293b }));
+        chair1.position.set(i, 0.5, 2.0);
+        const chair2 = chair1.clone();
+        chair2.position.set(i, 0.5, -2.0);
+        group.add(chair1, chair2);
+      }
+
+      // Large Whiteboard / Corporate Roadmap Display
+      const board = new THREE.Mesh(
+        new THREE.BoxGeometry(8, 3.5, 0.1),
+        new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2 })
+      );
+      board.position.set(0, 3.2, -6.8);
+      group.add(board);
+
+      group.position.set(x, 0, z);
+      scene.add(group);
+    }
+
+    function createBreakLounge(x, z) {
+      const group = new THREE.Group();
+
+      // Kitchenette Bar / Coffee Counter
+      const counter = new THREE.Mesh(
+        new THREE.BoxGeometry(9, 0.9, 1.8),
+        new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.4 })
+      );
+      counter.position.set(0, 0.45, -5.5);
+      group.add(counter);
+
+      // Coffee Machine
+      const coffee = new THREE.Mesh(
+        new THREE.BoxGeometry(0.8, 0.8, 0.6),
+        new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8 })
+      );
+      coffee.position.set(2, 1.25, -5.5);
+      group.add(coffee);
+
+      // Lounge Couches & Coffee Table
+      const couch = new THREE.Mesh(
+        new THREE.BoxGeometry(5, 0.8, 2.0),
+        new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.8 })
+      );
+      couch.position.set(-1, 0.4, 0);
+      group.add(couch);
+
+      group.position.set(x, 0, z);
+      scene.add(group);
+    }
+
+    function createReceptionLounge(x, z) {
+      const group = new THREE.Group();
+
+      // Wooden Front Desk
+      const desk = new THREE.Mesh(
+        new THREE.BoxGeometry(5.5, 1.1, 1.5),
+        new THREE.MeshStandardMaterial({ color: 0x9a3412, roughness: 0.3 })
+      );
+      desk.position.set(0, 0.55, 6);
+      group.add(desk);
+
+      // Waiting Sofas (Beige Leather matching screenshot)
+      const sofa1 = new THREE.Mesh(new THREE.BoxGeometry(4.5, 0.7, 1.8), new THREE.MeshStandardMaterial({ color: 0xd6d3d1 }));
+      sofa1.position.set(-2, 0.35, -1);
+      const sofa2 = sofa1.clone();
+      sofa2.position.set(3.5, 0.35, -1);
+      group.add(sofa1, sofa2);
+
+      group.position.set(x, 0, z);
+      scene.add(group);
+    }
+
+    // =========================================================================
+    // AVATARS & FLOATING CONTEXT MENUS (EXACT SCREENSHOT MENUS)
+    // =========================================================================
+    function buildDollhouseAvatars() {
+      const overlay = document.getElementById('avatars-overlay-container');
+
+      AVATARS.forEach((av, idx) => {
+        const group = new THREE.Group();
+
+        // 3D Suit/Dress Avatar Body
+        const body = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.28, 0.4, 1.1, 16),
+          new THREE.MeshStandardMaterial({ color: av.color, roughness: 0.4 })
+        );
+        body.position.y = 0.55;
+        body.castShadow = true;
+        group.add(body);
+
+        // Avatar Head
+        const head = new THREE.Mesh(
+          new THREE.SphereGeometry(0.3, 20, 20),
+          new THREE.MeshStandardMaterial({ color: 0xfde047, roughness: 0.6 })
+        );
+        head.position.y = 1.35;
+        head.castShadow = true;
+        group.add(head);
+
+        group.position.set(av.pos.x, 0, av.pos.z);
+        scene.add(group);
+        avatarMeshes[av.id] = group;
+
+        // Floating Context Menu on 2D Overlay
+        const menu = document.createElement('div');
+        menu.id = `context-menu-${av.id}`;
+        menu.className = "avatar-action-menu text-xs font-semibold";
+        menu.innerHTML = `
+          <div class="px-2 py-1 text-[10px] font-bold text-slate-400 border-b border-slate-700/60 flex items-center justify-between mb-1">
+            <span>${av.name}</span>
+            <i class="fa-solid fa-circle-check text-blue-400"></i>
+          </div>
+          <button onclick="triggerAvatarAction('${av.id}', 'assign')" class="w-full text-left px-2.5 py-1 rounded hover:bg-blue-600/30 text-slate-200 flex items-center space-x-2 transition">
+            <i class="fa-solid fa-pen-to-square text-blue-400"></i>
+            <span>Assign Task</span>
+          </button>
+          <button onclick="triggerAvatarAction('${av.id}', 'profile')" class="w-full text-left px-2.5 py-1 rounded hover:bg-blue-600/30 text-slate-200 flex items-center space-x-2 transition">
+            <i class="fa-solid fa-user text-indigo-400"></i>
+            <span>View Profile</span>
+          </button>
+          <button onclick="triggerAvatarAction('${av.id}', 'contact')" class="w-full text-left px-2.5 py-1 rounded hover:bg-blue-600/30 text-slate-200 flex items-center space-x-2 transition">
+            <i class="fa-solid fa-envelope text-cyan-400"></i>
+            <span>Contact</span>
+          </button>
+        `;
+        overlay.appendChild(menu);
+        avatarMenuElements[av.id] = menu;
+
+        // Only show context menus for Avatar 1 and 2 initially like screenshot
+        if (idx > 1) {
+          menu.style.display = 'none';
+        }
+      });
+    }
+
+    function updateAvatarOverlayPositions() {
+      const tempV = new THREE.Vector3();
+
+      AVATARS.forEach(av => {
+        const mesh = avatarMeshes[av.id];
+        const menu = avatarMenuElements[av.id];
+        if (!mesh || !menu || menu.style.display === 'none') return;
+
+        tempV.set(mesh.position.x, mesh.position.y + 1.6, mesh.position.z);
+        tempV.project(camera);
+
+        if (tempV.z > 1) {
+          menu.style.opacity = '0';
+          return;
+        }
+
+        const x = (tempV.x * 0.5 + 0.5) * window.innerWidth;
+        const y = (-(tempV.y * 0.5) + 0.5) * window.innerHeight;
+
+        menu.style.transform = `translate(-50%, -100%) translate(${x}px, ${y}px)`;
+        menu.style.opacity = '1';
+      });
+    }
+
+    function renderHierarchyDirectory() {
+      const container = document.getElementById('hierarchy-list');
+      container.innerHTML = "";
+
+      AVATARS.forEach(av => {
+        const item = document.createElement('div');
+        item.onclick = () => focusAgent(av.id);
+        item.className = "p-1.5 rounded-xl bg-slate-900/70 hover:bg-slate-800/90 border border-slate-700/50 cursor-pointer flex items-center justify-between transition group";
+        item.innerHTML = `
+          <div class="flex items-center space-x-2">
+            <div class="w-6 h-6 rounded-full bg-slate-800 border border-slate-600 flex items-center justify-center text-[10px] text-blue-400 font-bold">
+              <i class="fa-solid fa-user"></i>
+            </div>
+            <div>
+              <div class="text-[11px] font-bold text-slate-200 group-hover:text-blue-300">${av.name}</div>
+              <div class="text-[9px] text-slate-400">${av.status}</div>
+            </div>
+          </div>
+          <i class="fa-solid fa-circle-check text-[11px] text-blue-400"></i>
+        `;
+        container.appendChild(item);
+      });
+    }
+
+    // =========================================================================
+    // CAMERA CONTROLLER & NAVIGATION MODES
+    // =========================================================================
+    function setCameraMode(mode) {
+      cameraMode = mode;
+      isWalkthrough = (mode === 'walkthrough');
+
+      const topWalk = document.getElementById('top-btn-walkthrough');
+      const topIso = document.getElementById('top-btn-isometric');
+      const btmWalk = document.getElementById('btm-btn-walkthrough');
+      const btmIso = document.getElementById('btm-btn-isometric');
+
+      if (mode === 'isometric') {
+        if (topIso) topIso.className = "px-4 py-2 rounded-xl hq-glass-active transition flex items-center space-x-2";
+        if (topWalk) topWalk.className = "px-4 py-2 rounded-xl text-slate-300 hover:text-white transition flex items-center space-x-2";
+        if (btmIso) btmIso.className = "px-4 py-2 rounded-xl hq-glass-active transition flex items-center space-x-2";
+        if (btmWalk) btmWalk.className = "px-4 py-2 rounded-xl text-slate-300 hover:text-white transition flex items-center space-x-2";
+
+        gsap.to(camera.position, { x: 30, y: 36, z: 38, duration: 1.4, ease: "power2.inOut" });
+        gsap.to(controls.target, { x: 0, y: 0, z: 0, duration: 1.4, ease: "power2.inOut" });
+      } else {
+        if (topWalk) topWalk.className = "px-4 py-2 rounded-xl hq-glass-active transition flex items-center space-x-2";
+        if (topIso) topIso.className = "px-4 py-2 rounded-xl text-slate-300 hover:text-white transition flex items-center space-x-2";
+        if (btmWalk) btmWalk.className = "px-4 py-2 rounded-xl hq-glass-active transition flex items-center space-x-2";
+        if (btmIso) btmIso.className = "px-4 py-2 rounded-xl text-slate-300 hover:text-white transition flex items-center space-x-2";
+
+        startWalkthroughAnimation();
+      }
+    }
+
+    function startWalkthroughAnimation() {
+      const pathPoints = [
+        new THREE.Vector3(-14, 1.8, 12),  // Reception
+        new THREE.Vector3(0, 1.8, 6),     // Entering Main Workspace
+        new THREE.Vector3(-10, 1.8, -6),  // Outside Meeting Room
+        new THREE.Vector3(-14, 1.8, -10), // Inside Meeting Room
+        new THREE.Vector3(14, 1.8, -10),  // Break Lounge
+        new THREE.Vector3(0, 1.8, 2)      // Center Workstations
+      ];
+      const curve = new THREE.CatmullRomCurve3(pathPoints, true);
+
+      gsap.to({ val: 0 }, {
+        val: 1,
+        duration: 16,
+        repeat: -1,
+        ease: "none",
+        onUpdate: function() {
+          if (!isWalkthrough) return;
+          const t = this.targets()[0].val;
+          camera.position.copy(curve.getPoint(t));
+          controls.target.copy(curve.getPoint((t + 0.05) % 1.0));
+        }
+      });
+    }
+
+    function focusZone(zoneKey) {
+      isWalkthrough = false;
+      const zone = ZONES[zoneKey];
+      if (!zone) return;
+
+      document.querySelectorAll('.zone-btn').forEach(btn => {
+        btn.className = "zone-btn w-full py-2 px-3 rounded-xl bg-slate-900/80 hover:bg-slate-800/90 border border-slate-700/60 text-slate-200 text-xs font-medium flex items-center justify-between transition";
+      });
+      const activeBtn = document.getElementById(`zone-btn-${zoneKey}`);
+      if (activeBtn) activeBtn.className = "zone-btn w-full py-2 px-3 rounded-xl hq-glass-active text-xs font-semibold flex items-center justify-between transition";
+
+      gsap.to(camera.position, { x: zone.cam.x, y: zone.cam.y, z: zone.cam.z, duration: 1.2, ease: "power2.inOut" });
+      gsap.to(controls.target, { x: zone.target.x, y: zone.target.y, z: zone.target.z, duration: 1.2, ease: "power2.inOut" });
+    }
+
+    function focusAgent(agentId) {
+      isWalkthrough = false;
+      const mesh = avatarMeshes[agentId];
+      if (!mesh) return;
+
+      // Show context menu for this avatar
+      Object.keys(avatarMenuElements).forEach(id => {
+        avatarMenuElements[id].style.display = (id === agentId) ? 'block' : 'none';
+      });
+
+      gsap.to(camera.position, { x: mesh.position.x + 6, y: 5, z: mesh.position.z + 8, duration: 1.2, ease: "power2.inOut" });
+      gsap.to(controls.target, { x: mesh.position.x, y: 1.2, z: mesh.position.z, duration: 1.2, ease: "power2.inOut" });
+    }
+
+    function toggleLookPerson() {
+      isLookPerson = !isLookPerson;
+      const btn = document.getElementById('btn-look-person');
+      if (isLookPerson) {
+        btn.classList.add('bg-blue-600', 'text-white');
+        focusAgent('orchestrator');
+      } else {
+        btn.classList.remove('bg-blue-600', 'text-white');
+        setCameraMode('isometric');
+      }
+    }
+
+    // D-Pad / WASD Movement
+    let moveInterval = null;
+    function startMovement(dir) {
+      if (moveInterval) clearInterval(moveInterval);
+      moveInterval = setInterval(() => {
+        const forward = new THREE.Vector3();
+        camera.getWorldDirection(forward);
+        forward.y = 0;
+        forward.normalize();
+        const side = new THREE.Vector3(-forward.z, 0, forward.x);
+        const speed = 0.6;
+
+        if (dir === 'forward') {
+          camera.position.addScaledVector(forward, speed);
+          controls.target.addScaledVector(forward, speed);
+        } else if (dir === 'backward') {
+          camera.position.addScaledVector(forward, -speed);
+          controls.target.addScaledVector(forward, -speed);
+        } else if (dir === 'left') {
+          camera.position.addScaledVector(side, -speed);
+          controls.target.addScaledVector(side, -speed);
+        } else if (dir === 'right') {
+          camera.position.addScaledVector(side, speed);
+          controls.target.addScaledVector(side, speed);
+        }
+      }, 30);
+    }
+
+    function stopMovement() {
+      if (moveInterval) {
+        clearInterval(moveInterval);
+        moveInterval = null;
+      }
+    }
+
+    window.addEventListener('keydown', (e) => {
+      const key = e.key.toLowerCase();
+      if (['w', 'a', 's', 'd'].includes(key) && document.activeElement.tagName !== 'TEXTAREA') {
+        if (key === 'w') startMovement('forward');
+        if (key === 's') startMovement('backward');
+        if (key === 'a') startMovement('left');
+        if (key === 'd') startMovement('right');
+      }
+    });
+
+    window.addEventListener('keyup', (e) => {
+      const key = e.key.toLowerCase();
+      if (['w', 'a', 's', 'd'].includes(key)) stopMovement();
+    });
+
+    function onWindowResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    // =========================================================================
+    // CONTEXT ACTIONS & MULTI-AGENT EXECUTION
+    // =========================================================================
+    function triggerAvatarAction(agentId, action) {
+      const av = AVATARS.find(a => a.id === agentId);
+      if (!av) return;
+
+      if (action === 'assign') {
+        toggleCanvasDrawer(true);
+        switchWorkCanvasTab('intercom');
+        setPrompt(`Assign task to ${av.name}: `);
+      } else if (action === 'profile') {
+        toggleCanvasDrawer(true);
+        switchWorkCanvasTab('plan');
+      } else if (action === 'contact') {
+        toggleCanvasDrawer(true);
+        switchWorkCanvasTab('intercom');
+        appendMessage(av.name, `I am standing by for direct directives. What do you need?`, "text-blue-400");
+      }
+    }
+
+    function toggleCanvasDrawer(forceOpen = false) {
+      const drawer = document.getElementById('canvas-drawer');
+      if (forceOpen) {
+        drawer.classList.remove('hidden');
+      } else {
+        drawer.classList.toggle('hidden');
+      }
+    }
+
+    function switchWorkCanvasTab(tabKey) {
+      ['intercom', 'plan', 'blueprint', 'code', 'safety'].forEach(k => {
+        const v = document.getElementById(`wview-${k}`);
+        const b = document.getElementById(`wtab-${k}`);
+        if (v) v.classList.add('hidden');
+        if (b) b.className = "wtab-btn px-2.5 py-1 rounded-lg font-semibold text-slate-400 hover:text-white transition";
+      });
+      const tv = document.getElementById(`wview-${tabKey}`);
+      const tb = document.getElementById(`wtab-${tabKey}`);
+      if (tv) tv.classList.remove('hidden');
+      if (tb) tb.className = "wtab-btn px-2.5 py-1 rounded-lg font-semibold bg-blue-600 text-white transition";
+    }
+
+    function setPrompt(text) {
+      document.getElementById('chat-input').value = text;
+      document.getElementById('chat-input').focus();
+    }
+
+    function handleKeyDown(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    }
+
+    function appendMessage(sender, text, colorClass = "text-blue-400") {
+      const stream = document.getElementById('chat-stream');
+      const div = document.createElement('div');
+      div.className = "flex items-start space-x-2.5 mb-2.5";
+      div.innerHTML = `
+        <div class="w-7 h-7 rounded-lg bg-slate-900 border border-slate-700 ${colorClass} flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">
+          <i class="fa-solid fa-user"></i>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 p-3 rounded-2xl text-slate-200 shadow flex-1">
+          <div class="font-bold ${colorClass} mb-0.5">${sender}:</div>
+          <p class="leading-relaxed whitespace-pre-wrap">${text}</p>
+        </div>
+      `;
+      stream.appendChild(div);
+      const b = document.getElementById('drawer-body-container');
+      b.scrollTop = b.scrollHeight;
+    }
+
+    function appendUserMessage(text) {
+      const stream = document.getElementById('chat-stream');
+      const div = document.createElement('div');
+      div.className = "flex items-start justify-end space-x-2.5 mb-2.5";
+      div.innerHTML = `
+        <div class="bg-blue-900/60 border border-blue-700 p-3 rounded-2xl text-slate-100 shadow max-w-md">
+          <div class="font-bold text-blue-300 mb-0.5 text-right">You:</div>
+          <p class="leading-relaxed whitespace-pre-wrap">${text}</p>
+        </div>
+      `;
+      stream.appendChild(div);
+      const b = document.getElementById('drawer-body-container');
+      b.scrollTop = b.scrollHeight;
+    }
+
+    async function sendMessage() {
+      const input = document.getElementById('chat-input');
+      const text = input.value.trim();
+      if (!text) return;
+
+      input.value = "";
+      appendUserMessage(text);
+
+      const sendBtn = document.getElementById('send-btn');
+      sendBtn.disabled = true;
+      sendBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i>`;
+
+      await runDelegationPipeline(text);
+
+      sendBtn.disabled = false;
+      sendBtn.innerHTML = `<span>Assign</span><i class="fa-solid fa-paper-plane"></i>`;
+    }
+
+    async function runDelegationPipeline(goal) {
+      const pill = document.getElementById('canvas-status-pill');
+
+      // 1. Managing Director (@Orchestrator)
+      pill.innerText = "DISPATCHING";
+      focusAgent('orchestrator');
+      appendMessage("Managing Director (@Orchestrator)", `Assigned task: "${goal}". Routing to Strategy, Architecture, Engineering, and SecOps.`);
+      await new Promise(r => setTimeout(r, 1200));
+
+      // 2. Strategy Consultant (@Consultant)
+      pill.innerText = "PRD & ROI";
+      focusAgent('consultant');
+      switchWorkCanvasTab('plan');
+      document.getElementById('plan-summary').innerText = `PRD for "${goal}":\n• 2x2 Matrix: Quick Win (High Value)\n• Projected Savings: 74% labor offset with payback in 1.1 months\n• Core Requirements:\n  1. Context-aware validation\n  2. Fast document ingestion\n  3. Human escalation loop`;
+      appendMessage("Strategy Consultant (@Consultant)", "Calculated ROI metrics and requirements draft. Check Plan & ROI tab!");
+      await new Promise(r => setTimeout(r, 1200));
+
+      // 3. Systems Architect (@Architect)
+      pill.innerText = "BLUEPRINT";
+      focusAgent('architect');
+      switchWorkCanvasTab('blueprint');
+      document.getElementById('blueprint-content').innerText = `Architecture for "${goal}":\n• Pattern: Hierarchical 5-Node Agent Loop\n• Memory: 8k token sliding window\n• Vector RAG: Semantic retrieval embeddings\n• Latency Target: < 1.5s`;
+      appendMessage("Systems Architect (@Architect)", "Blueprint and schemas generated. Check Blueprint tab!");
+      await new Promise(r => setTimeout(r, 1200));
+
+      // 4. Lead AI Engineer (@Engineer)
+      pill.innerText = "IMPLEMENTATION";
+      focusAgent('engineer');
+      switchWorkCanvasTab('code');
+      document.getElementById('code-display').innerText = `"""\nProduction Runtime for: ${goal}\n"""\nclass EnterpriseAgentRuntime:\n    def __init__(self, service: str):\n        self.service = service\n\n    def process(self, task: dict) -> dict:\n        return {"status": "SUCCESS", "task": task, "verified": True}\n\ndef test_agent():\n    e = EnterpriseAgentRuntime("AgentCore")\n    assert e.process({"action": "run"})["status"] == "SUCCESS"`;
+      appendMessage("Lead AI Engineer (@Engineer)", "Code and test functions generated. Check Code tab!");
+      await new Promise(r => setTimeout(r, 1200));
+
+      // 5. SecOps Auditor (@Auditor)
+      pill.innerText = "VERIFIED";
+      focusAgent('auditor');
+      switchWorkCanvasTab('safety');
+      document.getElementById('safety-summary').innerText = "Verified against 7 Trust Dimensions and prompt injection mitigation. Score: 96.8%.";
+      appendMessage("SecOps Auditor (@Auditor)", "Passed safety and privacy audits. Score: 96.8%!");
+      await new Promise(r => setTimeout(r, 800));
+
+      // Done
+      setCameraMode('isometric');
+      pill.innerText = "DELIVERED";
+      pill.className = "text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 border border-emerald-700 text-emerald-300 font-mono";
+      appendMessage("Managing Director (@Orchestrator)", "🎉 Full multi-agent lifecycle complete and verified on Live Work Canvas!");
+    }
+
+    function copyGeneratedCode() {
+      const code = document.getElementById('code-display').innerText;
+      navigator.clipboard.writeText(code);
+      alert("✓ Code copied to clipboard!");
+    }
+
+    function toggleSideMenu() {
+      alert("Menu: Deloitte Autonomous AI Consultancy Headquarters\nVersion 2.0 (Dollhouse 3D)");
+    }
+
+    // =========================================================================
+    // ANIMATE LOOP
+    // =========================================================================
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+
+      // Subtle avatar walking simulation for Avatar 1
+      const av1Mesh = avatarMeshes['orchestrator'];
+      if (av1Mesh) {
+        const time = clock.getElapsedTime();
+        av1Mesh.position.x = -3 + Math.sin(time * 0.8) * 3;
+        av1Mesh.position.z = -4 + Math.cos(time * 0.8) * 2;
+      }
+
+      renderer.render(scene, camera);
+      updateAvatarOverlayPositions();
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      initScene();
+    });
+  </script>
+</body>
+</html>

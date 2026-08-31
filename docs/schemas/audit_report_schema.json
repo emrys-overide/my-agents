@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AuditReport",
+  "type": "object",
+  "required": [
+    "audit_id",
+    "overall_score",
+    "verdict",
+    "trustworthy_ai_pillars",
+    "owasp_llm_vulnerabilities",
+    "remediation_actions",
+    "sign_off_timestamp"
+  ],
+  "properties": {
+    "audit_id": { "type": "string" },
+    "overall_score": { "type": "number", "minimum": 0, "maximum": 100 },
+    "verdict": { "type": "string", "enum": ["PASS_EXEMPLARY", "PASS_CONDITIONAL", "REJECTED_REMEDIATION_REQUIRED"] },
+    "trustworthy_ai_pillars": {
+      "type": "object",
+      "required": [
+        "fair_and_impartial",
+        "robust_and_reliable",
+        "transparent_and_explainable",
+        "respectful_of_privacy",
+        "safe_and_secure",
+        "responsible_and_accountable",
+        "grc_and_compliance"
+      ],
+      "properties": {
+        "fair_and_impartial": { "type": "number", "minimum": 0, "maximum": 100 },
+        "robust_and_reliable": { "type": "number", "minimum": 0, "maximum": 100 },
+        "transparent_and_explainable": { "type": "number", "minimum": 0, "maximum": 100 },
+        "respectful_of_privacy": { "type": "number", "minimum": 0, "maximum": 100 },
+        "safe_and_secure": { "type": "number", "minimum": 0, "maximum": 100 },
+        "responsible_and_accountable": { "type": "number", "minimum": 0, "maximum": 100 },
+        "grc_and_compliance": { "type": "number", "minimum": 0, "maximum": 100 }
+      }
+    },
+    "owasp_llm_vulnerabilities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "severity", "description", "status"],
+        "properties": {
+          "code": { "type": "string" },
+          "severity": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
+          "description": { "type": "string" },
+          "status": { "type": "string", "enum": ["MITIGATED", "OPEN", "ACCEPTED"] }
+        }
+      }
+    },
+    "remediation_actions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "sign_off_timestamp": { "type": "string" }
+  }
+}

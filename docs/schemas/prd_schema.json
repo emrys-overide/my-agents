@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PRDDocument",
+  "type": "object",
+  "required": [
+    "project_name",
+    "executive_summary",
+    "business_case",
+    "value_viability_matrix",
+    "functional_requirements",
+    "non_functional_requirements",
+    "acceptance_criteria",
+    "regulatory_constraints"
+  ],
+  "properties": {
+    "project_name": { "type": "string" },
+    "executive_summary": { "type": "string" },
+    "business_case": {
+      "type": "object",
+      "required": ["estimated_tco", "projected_roi", "labor_efficiency_gain_pct", "token_cost_per_task"],
+      "properties": {
+        "estimated_tco": { "type": "number" },
+        "projected_roi": { "type": "string" },
+        "labor_efficiency_gain_pct": { "type": "number" },
+        "token_cost_per_task": { "type": "number" }
+      }
+    },
+    "value_viability_matrix": {
+      "type": "object",
+      "required": ["value_score", "viability_score", "classification"],
+      "properties": {
+        "value_score": { "type": "number", "minimum": 0, "maximum": 10 },
+        "viability_score": { "type": "number", "minimum": 0, "maximum": 10 },
+        "classification": { "type": "string", "enum": ["Quick Win", "Strategic Bet", "Incremental Utility", "Deprioritize"] }
+      }
+    },
+    "functional_requirements": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "non_functional_requirements": {
+      "type": "object",
+      "required": ["max_p95_latency_ms", "target_accuracy_pct", "context_window_limit"],
+      "properties": {
+        "max_p95_latency_ms": { "type": "number" },
+        "target_accuracy_pct": { "type": "number" },
+        "context_window_limit": { "type": "integer" }
+      }
+    },
+    "acceptance_criteria": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "regulatory_constraints": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}
