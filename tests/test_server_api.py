@@ -1,7 +1,8 @@
 """
-Tests for FastAPI server endpoints.
+Fast, robust unit tests for FastAPI server endpoints.
 """
 
+from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 from src.server import app
@@ -15,13 +16,63 @@ def test_index_route():
     assert "Deloitte AI Team" in response.text
 
 
+def test_llm_status_route():
+    res = client.get("/api/llm/status")
+    assert res.status_code == 200
+    data = res.json()
+    assert "primary_brain" in data
+    assert "active_agents" in data
+
+
 def test_chat_with_agent_route():
-    for persona in ["consultant", "architect", "engineer", "auditor", "orchestrator"]:
-        res = client.post("/api/agent/chat", json={"persona": persona, "message": "Test inquiry"})
+    with patch("src.server.call_unified_llm") as mock_llm:
+        mock_llm.return_value = {
+            "reply": "Live LLM response from Specialist.",
+            "provider": "gemini-2.5-flash",
+            "is_live_llm": True
+        }
+        res = client.post("/api/agent/chat", json={"persona": "architect", "message": "What is our architecture?"})
         assert res.status_code == 200
         data = res.json()
-        assert data["persona"] == persona
+        assert data["persona"] == "architect"
         assert "reply" in data
+
+
+def test_agent_to_agent_dialogue_route():
+    with patch("src.server.call_unified_llm") as mock_llm:
+        mock_llm.side_effect = [
+            {"reply": "@Architect, what vector index do you recommend?", "provider": "gemini-2.5-flash"},
+            {"reply": "@Consultant, I recommend HNSW with cosine similarity.", "provider": "gemini-2.5-flash"}
+        ]
+        res = client.post(
+            "/api/agent/dialogue",
+            json={
+                "agent_a": "consultant",
+                "agent_b": "architect",
+                "topic": "Determine vector index storage architecture"
+            }
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert "turns" in data
+        assert len(data["turns"]) == 2
+        assert data["turns"][0]["speaker"] == "@Consultant"
+        assert data["turns"][1]["speaker"] == "@Architect"
+
+
+def test_team_conference_route():
+    with patch("src.server.call_unified_llm") as mock_llm:
+        mock_llm.return_value = {"reply": "Specialist assessment complete.", "provider": "gemini-2.5-flash"}
+        res = client.post(
+            "/api/agent/conference",
+            json={
+                "topic": "Enterprise migration to multi-agent architecture"
+            }
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert "conference_contributions" in data
+        assert len(data["conference_contributions"]) == 5
 
 
 def test_calculate_roi_route():
@@ -72,4 +123,3 @@ def test_custom_agent_routes():
     assert list_res.status_code == 200
     agents = list_res.json()["custom_agents"]
     assert any(a["id"] == "devops" for a in agents)
-

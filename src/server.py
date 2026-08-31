@@ -1,13 +1,15 @@
 """
 FastAPI Server for Deloitte Autonomous AI Consultancy UI.
-Serves interactive web frontend and provides REST endpoints for live agent execution.
+Serves interactive web frontend and provides REST endpoints for live agent execution,
+multi-agent peer-to-peer dialogues, and direct LLM human-agent chat.
 """
 
 from __future__ import annotations
 import os
 import sys
+import requests
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -27,12 +29,17 @@ from src.framework.personas import (
     OrchestratorAgent
 )
 from src.framework.tools import calculate_roi_and_tco
-from src.framework.gemini_client import call_gemini_api, get_gemini_api_key
+from src.framework.gemini_client import (
+    call_gemini_api,
+    call_ollama_api,
+    call_unified_llm,
+    get_gemini_api_key
+)
 
 app = FastAPI(
     title="Deloitte Autonomous AI Consultancy API",
-    description="Multi-agent EVD orchestration and direct persona intercom backend.",
-    version="1.0.0"
+    description="Multi-agent EVD orchestration, LLM dialogues, and persona intercom backend.",
+    version="2.5.0"
 )
 
 # Engine instance
@@ -45,7 +52,7 @@ PERSONA_PROMPTS = {
         "You are the Deloitte Strategy & Product Consultant (@Consultant). "
         "Apply Deloitte's Enterprise Value Delivery (EVD) and 2x2 Value-vs-Viability framework. "
         "Focus on business viability, ROI, labor efficiency gain, and testable acceptance criteria. "
-        "Keep your response structured, professional, and actionable."
+        "Keep your response crisp, professional, and actionable."
     ),
     "architect": (
         "You are the Deloitte Principal Systems Architect (@Architect). "
@@ -82,6 +89,19 @@ class ChatRequest(BaseModel):
     api_key: Optional[str] = None
 
 
+class DialogueRequest(BaseModel):
+    agent_a: str  # e.g., "consultant"
+    agent_b: str  # e.g., "architect"
+    topic: str
+    api_key: Optional[str] = None
+
+
+class ConferenceRequest(BaseModel):
+    topic: str
+    agents: Optional[List[str]] = None
+    api_key: Optional[str] = None
+
+
 class ROIRequest(BaseModel):
     annual_task_volume: int = 120000
     avg_human_minutes_per_task: float = 15.0
@@ -89,13 +109,42 @@ class ROIRequest(BaseModel):
     avg_tokens_per_task: int = 1800
 
 
+class CustomAgentRequest(BaseModel):
+    id: str
+    name: str
+    role: str
+    code: str
+    color: str = "#3b82f6"
+    system_prompt: str
+
+
+custom_agents_store: Dict[str, Dict[str, Any]] = {}
+
+
 @app.get("/api/config/status")
+@app.get("/api/llm/status")
 async def get_config_status():
-    has_key = bool(get_gemini_api_key())
+    has_gemini = bool(get_gemini_api_key())
+    
+    # Probe local Ollama models
+    ollama_models = []
+    has_ollama = False
+    try:
+        res = requests.get("http://localhost:11434/api/tags", timeout=1.5)
+        if res.status_code == 200:
+            has_ollama = True
+            ollama_models = [m.get("name") for m in res.json().get("models", [])]
+    except Exception:
+        pass
+
+    primary_brain = "gemini-2.5-flash" if has_gemini else ("ollama (qwen2.5-coder)" if has_ollama else "persona_playbook")
+
     return {
-        "gemini_api_configured": has_key,
-        "default_model": "gemini-2.5-flash",
-        "active_agents": ["orchestrator", "consultant", "architect", "engineer", "auditor"]
+        "gemini_api_configured": has_gemini,
+        "ollama_active": has_ollama,
+        "ollama_models": ollama_models,
+        "primary_brain": primary_brain,
+        "active_agents": ["orchestrator", "consultant", "architect", "engineer", "auditor"] + list(custom_agents_store.keys())
     }
 
 
@@ -119,7 +168,10 @@ async def get_latest_deliverables():
 
 @app.post("/api/agent/chat")
 async def chat_with_agent(req: ChatRequest):
-    persona_key = req.persona.lower()
+    """
+    Direct 1-on-1 human-to-agent chat powered by LLM (Gemini or Ollama).
+    """
+    persona_key = req.persona.lower().replace("@", "").strip()
     msg = req.message
     
     if persona_key not in PERSONA_PROMPTS:
@@ -127,27 +179,27 @@ async def chat_with_agent(req: ChatRequest):
 
     system_prompt = PERSONA_PROMPTS[persona_key]
     
-    # Try calling live Gemini API if API key exists
-    live_reply = call_gemini_api(
+    # Call unified multi-LLM engine
+    llm_res = call_unified_llm(
         system_prompt=system_prompt,
         user_message=msg,
-        model_name="gemini-2.5-flash",
-        api_key=req.api_key
+        gemini_key=req.api_key
     )
 
-    if live_reply and not live_reply.startswith("[API Error"):
+    if llm_res.get("reply"):
         return {
             "persona": req.persona,
-            "reply": live_reply,
-            "mode": "live_gemini"
+            "reply": llm_res["reply"],
+            "provider": llm_res["provider"],
+            "mode": "live_llm"
         }
 
-    # Fallback to structured playbook response if no API key is provided
+    # Intelligent Playbook Fallback
     if persona_key == "consultant":
         reply = (
-            f"Deloitte AI Strategy evaluation for '{msg}': "
+            f"Deloitte AI Strategy analysis for '{msg}': "
             f"Mapped to the Quick Win quadrant (Value: 9.1/10, Viability: 8.7/10). "
-            f"The business case projects a 70% labor efficiency offset with a payback period under 1.5 months."
+            f"Projects ~70% labor efficiency offset with a payback period under 1.5 months."
         )
     elif persona_key == "architect":
         reply = (
@@ -177,20 +229,71 @@ async def chat_with_agent(req: ChatRequest):
     return {
         "persona": req.persona,
         "reply": reply,
+        "provider": "persona_playbook",
         "mode": "playbook_simulated"
     }
 
 
-class CustomAgentRequest(BaseModel):
-    id: str
-    name: str
-    role: str
-    code: str
-    color: str = "#3b82f6"
-    system_prompt: str
+@app.post("/api/agent/dialogue")
+async def agent_to_agent_dialogue(req: DialogueRequest):
+    """
+    Agent-to-Agent Peer Discussion (Agent A talks to Agent B using LLMs).
+    """
+    p_a = req.agent_a.lower().replace("@", "").strip()
+    p_b = req.agent_b.lower().replace("@", "").strip()
+
+    if p_a not in PERSONA_PROMPTS or p_b not in PERSONA_PROMPTS:
+        raise HTTPException(status_code=400, detail="Invalid agents specified.")
+
+    prompt_a = PERSONA_PROMPTS[p_a]
+    prompt_b = PERSONA_PROMPTS[p_b]
+
+    # Turn 1: Agent A speaks to Agent B
+    msg_a = f"Consulting with @{p_b.title()} regarding: '{req.topic}'. What is your assessment and how should we align?"
+    res_a = call_unified_llm(system_prompt=prompt_a, user_message=msg_a, gemini_key=req.api_key)
+    speech_a = res_a.get("reply") or f"@{p_b.title()}, I need your specialist review on '{req.topic}' to ensure adherence to standards."
+
+    # Turn 2: Agent B responds to Agent A
+    msg_b = f"@{p_a.title()} asked: '{speech_a}'. Provide your expert response and technical recommendations."
+    res_b = call_unified_llm(system_prompt=prompt_b, user_message=msg_b, gemini_key=req.api_key)
+    speech_b = res_b.get("reply") or f"@{p_a.title()}, from my domain perspective, '{req.topic}' aligns with our operational parameters and security safeguards."
+
+    return {
+        "topic": req.topic,
+        "turns": [
+            {"speaker": f"@{p_a.title()}", "message": speech_a, "provider": res_a.get("provider", "unified")},
+            {"speaker": f"@{p_b.title()}", "message": speech_b, "provider": res_b.get("provider", "unified")}
+        ]
+    }
 
 
-custom_agents_store: Dict[str, Dict[str, Any]] = {}
+@app.post("/api/agent/conference")
+async def team_conference(req: ConferenceRequest):
+    """
+    Multi-Agent Conference: All 5 agents debate and contribute to a topic.
+    """
+    agents = req.agents or ["orchestrator", "consultant", "architect", "engineer", "auditor"]
+    contributions = []
+
+    context_so_far = f"Topic: {req.topic}\n"
+    for ag in agents:
+        ag_key = ag.lower().replace("@", "").strip()
+        if ag_key in PERSONA_PROMPTS:
+            sys_p = PERSONA_PROMPTS[ag_key]
+            user_m = f"You are attending the Deloitte AI Leadership Conference.\n{context_so_far}\nGive your concise, high-value contribution as @{ag_key.title()}."
+            llm_res = call_unified_llm(system_prompt=sys_p, user_message=user_m, gemini_key=req.api_key)
+            speech = llm_res.get("reply") or f"As @{ag_key.title()}, I confirm readiness to support '{req.topic}' under our framework."
+            contributions.append({
+                "agent": f"@{ag_key.title()}",
+                "message": speech,
+                "provider": llm_res.get("provider", "unified")
+            })
+            context_so_far += f"\n@{ag_key.title()}: {speech}"
+
+    return {
+        "topic": req.topic,
+        "conference_contributions": contributions
+    }
 
 
 @app.post("/api/agents/custom")
