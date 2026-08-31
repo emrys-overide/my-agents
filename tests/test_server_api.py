@@ -51,3 +51,25 @@ def test_engagement_run_route():
     assert "prd" in data
     assert "architecture_spec" in data
     assert "audit_report" in data
+
+
+def test_custom_agent_routes():
+    res = client.post(
+        "/api/agents/custom",
+        json={
+            "id": "devops",
+            "name": "DevOps Engineer",
+            "role": "Cloud Automation",
+            "code": "@DevOps",
+            "color": "#f97316",
+            "system_prompt": "You are the DevOps Engineer."
+        }
+    )
+    assert res.status_code == 200
+    assert res.json()["status"] == "SUCCESS"
+
+    list_res = client.get("/api/agents/custom")
+    assert list_res.status_code == 200
+    agents = list_res.json()["custom_agents"]
+    assert any(a["id"] == "devops" for a in agents)
+

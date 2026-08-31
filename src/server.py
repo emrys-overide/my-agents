@@ -181,6 +181,30 @@ async def chat_with_agent(req: ChatRequest):
     }
 
 
+class CustomAgentRequest(BaseModel):
+    id: str
+    name: str
+    role: str
+    code: str
+    color: str = "#3b82f6"
+    system_prompt: str
+
+
+custom_agents_store: Dict[str, Dict[str, Any]] = {}
+
+
+@app.post("/api/agents/custom")
+async def create_custom_agent(req: CustomAgentRequest):
+    custom_agents_store[req.id] = req.model_dump()
+    PERSONA_PROMPTS[req.id] = req.system_prompt
+    return {"status": "SUCCESS", "agent": req.model_dump()}
+
+
+@app.get("/api/agents/custom")
+async def list_custom_agents():
+    return {"custom_agents": list(custom_agents_store.values())}
+
+
 @app.post("/api/financial/roi")
 async def calculate_roi(req: ROIRequest):
     data = calculate_roi_and_tco(
