@@ -218,12 +218,16 @@ async def agent_to_agent_dialogue(req: DialogueRequest):
     # Turn 1: Agent A speaks to Agent B
     msg_a = f"Consulting with @{p_b.title()} regarding: '{req.topic}'. What is your assessment and how should we align?"
     res_a = call_unified_llm(system_prompt=prompt_a, user_message=msg_a, gemini_key=req.api_key)
-    speech_a = res_a.get("reply") or f"@{p_b.title()}, I need your specialist review on '{req.topic}' to ensure adherence to standards."
+    speech_a = res_a.get("reply")
+    if not speech_a:
+        raise HTTPException(status_code=503, detail="No live language model is available for agent dialogue.")
 
     # Turn 2: Agent B responds to Agent A
     msg_b = f"@{p_a.title()} asked: '{speech_a}'. Provide your expert response and technical recommendations."
     res_b = call_unified_llm(system_prompt=prompt_b, user_message=msg_b, gemini_key=req.api_key)
-    speech_b = res_b.get("reply") or f"@{p_a.title()}, from my domain perspective, '{req.topic}' aligns with our operational parameters and security safeguards."
+    speech_b = res_b.get("reply")
+    if not speech_b:
+        raise HTTPException(status_code=503, detail="No live language model is available for agent dialogue.")
 
     return {
         "topic": req.topic,
@@ -249,7 +253,9 @@ async def team_conference(req: ConferenceRequest):
             sys_p = PERSONA_PROMPTS[ag_key]
             user_m = f"You are attending the Deloitte AI Leadership Conference.\n{context_so_far}\nGive your concise, high-value contribution as @{ag_key.title()}."
             llm_res = call_unified_llm(system_prompt=sys_p, user_message=user_m, gemini_key=req.api_key)
-            speech = llm_res.get("reply") or f"As @{ag_key.title()}, I confirm readiness to support '{req.topic}' under our framework."
+            speech = llm_res.get("reply")
+            if not speech:
+                raise HTTPException(status_code=503, detail="No live language model is available for team conference.")
             contributions.append({
                 "agent": f"@{ag_key.title()}",
                 "message": speech,
