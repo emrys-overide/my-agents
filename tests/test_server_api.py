@@ -130,3 +130,17 @@ def test_chat_without_live_model_returns_unavailable():
         res = client.post("/api/agent/chat", json={"persona": "auditor", "message": "Assess controls"})
     assert res.status_code == 503
     assert "No live language model" in res.json()["detail"]
+
+
+def test_dialogue_without_live_model_returns_unavailable():
+    with patch("src.server.call_unified_llm", return_value={"reply": None, "provider": "none"}):
+        res = client.post("/api/agent/dialogue", json={
+            "agent_a": "consultant", "agent_b": "architect", "topic": "Review controls"
+        })
+    assert res.status_code == 503
+
+
+def test_conference_without_live_model_returns_unavailable():
+    with patch("src.server.call_unified_llm", return_value={"reply": None, "provider": "none"}):
+        res = client.post("/api/agent/conference", json={"topic": "Review controls"})
+    assert res.status_code == 503
