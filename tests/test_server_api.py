@@ -123,3 +123,10 @@ def test_custom_agent_routes():
     assert list_res.status_code == 200
     agents = list_res.json()["custom_agents"]
     assert any(a["id"] == "devops" for a in agents)
+
+
+def test_chat_without_live_model_returns_unavailable():
+    with patch("src.server.call_unified_llm", return_value={"reply": None, "provider": "none"}):
+        res = client.post("/api/agent/chat", json={"persona": "auditor", "message": "Assess controls"})
+    assert res.status_code == 503
+    assert "No live language model" in res.json()["detail"]
