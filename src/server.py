@@ -194,44 +194,11 @@ async def chat_with_agent(req: ChatRequest):
             "mode": "live_llm"
         }
 
-    # Intelligent Playbook Fallback
-    if persona_key == "consultant":
-        reply = (
-            f"Deloitte AI Strategy analysis for '{msg}': "
-            f"Mapped to the Quick Win quadrant (Value: 9.1/10, Viability: 8.7/10). "
-            f"Projects ~70% labor efficiency offset with a payback period under 1.5 months."
-        )
-    elif persona_key == "architect":
-        reply = (
-            f"AI Factory Architecture for '{msg}': "
-            f"Designed a hierarchical 4-component state topology with strict JSON schema tool contracts, "
-            f"sliding-window working context (8k tokens), and an episodic vector memory layer."
-        )
-    elif persona_key == "engineer":
-        reply = (
-            f"Industrialized Engineering Runtime for '{msg}': "
-            f"Implemented resilient execution loop with exponential retry backoff, Pydantic type safety, "
-            f"and automated pytest verification harness achieving 94.5% coverage."
-        )
-    elif persona_key == "auditor":
-        reply = (
-            f"Trustworthy AI™ Audit for '{msg}': "
-            f"Evaluated across all 7 pillars (Overall Score: 94.3%, Status: PASS_EXEMPLARY). "
-            f"OWASP LLM01 Prompt Injection and LLM05 Code Injection defenses verified and mitigated."
-        )
-    else:
-        reply = (
-            f"Managing Director response regarding '{msg}': "
-            f"Aligned initiative with enterprise North Star objectives. Dispatched discovery to @Consultant "
-            f"and architecture gating to @Architect."
-        )
-
-    return {
-        "persona": req.persona,
-        "reply": reply,
-        "provider": "persona_playbook",
-        "mode": "playbook_simulated"
-    }
+    # A simulated answer must never be presented as a measured consulting result.
+    raise HTTPException(
+        status_code=503,
+        detail="No live language model is available. Configure Gemini or Ollama and retry.",
+    )
 
 
 @app.post("/api/agent/dialogue")
